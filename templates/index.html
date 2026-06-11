@@ -2,49 +2,126 @@
 <html lang="zh">
 <head>
   <meta charset="UTF-8">
-  <title>我的AI聊天机器人</title>
+  <title>我的AI助手</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
   <style>
-    body { font-family: sans-serif; max-width: 700px; margin: 40px auto; padding: 0 20px; }
-    #chat-box { height: 400px; border: 1px solid #ccc; border-radius: 8px; overflow-y: auto; padding: 16px; margin-bottom: 16px; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: sans-serif; height: 100vh; display: flex; flex-direction: column; }
+    header { padding: 16px 24px; border-bottom: 1px solid #eee; }
+    header h1 { font-size: 18px; }
+    .tabs { display: flex; gap: 8px; margin-top: 10px; }
+    .tab { padding: 6px 16px; border-radius: 20px; cursor: pointer; border: 1px solid #ccc; font-size: 14px; background: white; }
+    .tab.active { background: #0084ff; color: white; border-color: #0084ff; }
+    .panel { display: none; flex: 1; flex-direction: column; padding: 16px 24px; }
+    .panel.active { display: flex; }
+    #chat-box, #pdf-box { flex: 1; border: 1px solid #ccc; border-radius: 8px; overflow-y: auto; padding: 16px; margin-bottom: 16px; }
     .user { text-align: right; margin: 8px 0; }
-    .user span { background: #0084ff; color: white; padding: 8px 14px; border-radius: 16px; display: inline-block; }
+    .user span { background: #0084ff; color: white; padding: 8px 14px; border-radius: 16px; display: inline-block; max-width: 80%; }
     .ai { text-align: left; margin: 8px 0; }
-    .ai span { background: #f0f0f0; padding: 8px 14px; border-radius: 16px; display: inline-block; }
-    #input-area { display: flex; gap: 8px; }
-    #user-input { flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 8px; font-size: 15px; }
-    button { padding: 10px 20px; background: #0084ff; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 15px; }
+    .ai span { background: #f0f0f0; padding: 8px 14px; border-radius: 16px; display: inline-block; max-width: 80%; line-height: 1.6; }
+    .ai span h1, .ai span h2, .ai span h3 { margin: 8px 0 4px; }
+    .ai span p { margin: 4px 0; }
+    .ai span ul, .ai span ol { margin: 4px 0 4px 20px; }
+    .input-area { display: flex; gap: 8px; }
+    .input-area input { flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 8px; font-size: 15px; }
+    .input-area button { padding: 10px 20px; background: #0084ff; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 15px; }
+    #upload-area { border: 2px dashed #ccc; border-radius: 8px; padding: 20px; text-align: center; margin-bottom: 12px; }
+    #upload-area p { margin-bottom: 10px; color: #666; font-size: 14px; }
+    #upload-btn { padding: 8px 20px; background: #0084ff; color: white; border: none; border-radius: 8px; cursor: pointer; }
+    #pdf-status { font-size: 13px; color: green; margin-bottom: 12px; }
+    #pdf-ask { display: none; flex: 1; flex-direction: column; }
   </style>
 </head>
 <body>
-  <h2>我的AI聊天机器人</h2>
-  <div id="chat-box"></div>
-  <div id="input-area">
-    <input id="user-input" type="text" placeholder="输入消息..." />
-    <button onclick="sendMessage()">发送</button>
+  <header>
+    <h1>我的AI助手</h1>
+    <div class="tabs">
+      <button class="tab active" onclick="switchTab('chat', this)">💬 聊天</button>
+      <button class="tab" onclick="switchTab('pdf', this)">📄 PDF问答</button>
+    </div>
+  </header>
+
+  <div class="panel active" id="panel-chat">
+    <div id="chat-box"></div>
+    <div class="input-area">
+      <input id="chat-input" type="text" placeholder="输入消息..." />
+      <button onclick="sendMessage()">发送</button>
+    </div>
   </div>
+
+  <div class="panel" id="panel-pdf">
+    <div id="upload-area">
+      <p>上传PDF文件，然后向AI提问文件内容（可同时选多个）</p>
+      <input type="file" id="pdf-file" accept=".pdf,.docx,.pptx" multiple onchange="uploadPDF()" />
+    </div>
+    <div id="pdf-status"></div>
+    <div id="pdf-ask">
+      <div id="pdf-box"></div>
+      <div class="input-area">
+        <input id="pdf-input" type="text" placeholder="问PDF里的内容..." />
+        <button onclick="askQuestion()">发送</button>
+      </div>
+    </div>
+  </div>
+
   <script>
+    function switchTab(tab, el) {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+      el.classList.add('active');
+      document.getElementById('panel-' + tab).classList.add('active');
+    }
+
     async function sendMessage() {
-      const input = document.getElementById("user-input");
+      const input = document.getElementById("chat-input");
       const msg = input.value.trim();
       if (!msg) return;
-      
       const box = document.getElementById("chat-box");
       box.innerHTML += `<div class="user"><span>${msg}</span></div>`;
       input.value = "";
-      
       const res = await fetch("/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: msg })
       });
       const data = await res.json();
-      box.innerHTML += `<div class="ai"><span>${data.reply}</span></div>`;
+      box.innerHTML += `<div class="ai"><span>${marked.parse(data.reply)}</span></div>`;
       box.scrollTop = box.scrollHeight;
     }
 
-    document.getElementById("user-input").addEventListener("keydown", function(e) {
-      if (e.key === "Enter") sendMessage();
-    });
+    async function uploadPDF() {
+      const files = document.getElementById("pdf-file").files;
+      if (files.length === 0) { alert("请先选择PDF文件"); return; }
+      document.getElementById("pdf-status").textContent = "上传中...";
+      for (const file of files) {
+        const formData = new FormData();
+        formData.append("file", file);
+        const res = await fetch("/upload", { method: "POST", body: formData });
+        const data = await res.json();
+        document.getElementById("pdf-status").textContent = data.message;
+      }
+      document.getElementById("pdf-ask").style.display = "flex";
+    }
+
+    async function askQuestion() {
+      const input = document.getElementById("pdf-input");
+      const question = input.value.trim();
+      if (!question) return;
+      const box = document.getElementById("pdf-box");
+      box.innerHTML += `<div class="user"><span>${question}</span></div>`;
+      input.value = "";
+      const res = await fetch("/ask", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question })
+      });
+      const data = await res.json();
+      box.innerHTML += `<div class="ai"><span>${marked.parse(data.answer)}</span></div>`;
+      box.scrollTop = box.scrollHeight;
+    }
+
+    document.getElementById("chat-input").addEventListener("keydown", e => { if (e.key === "Enter") sendMessage(); });
+    document.getElementById("pdf-input").addEventListener("keydown", e => { if (e.key === "Enter") askQuestion(); });
   </script>
 </body>
 </html>
