@@ -12,9 +12,12 @@
     #sidebar { width: 220px; background: #f7f7f8; border-right: 1px solid #eee; display: flex; flex-direction: column; padding: 12px; }
     #new-chat-btn { padding: 10px; background: #0084ff; color: white; border: none; border-radius: 8px; cursor: pointer; margin-bottom: 12px; font-size: 14px; }
     #conversation-list { flex: 1; overflow-y: auto; }
-    .conv-item { padding: 10px 12px; border-radius: 8px; cursor: pointer; font-size: 14px; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .conv-item { padding: 10px 12px; border-radius: 8px; cursor: pointer; font-size: 14px; margin-bottom: 4px; display: flex; justify-content: space-between; align-items: center; min-width: 0; }
     .conv-item:hover { background: #ebebeb; }
     .conv-item.active { background: #e0edff; }
+    .conv-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
+    .conv-delete { color: #999; font-size: 13px; padding: 2px 6px; border-radius: 4px; flex-shrink: 0; margin-left: 4px; }
+    .conv-delete:hover { color: #ff4d4f; background: #fff; }
 
     /* 主区域 */
     #main { flex: 1; display: flex; flex-direction: column; }
@@ -93,7 +96,6 @@
       document.getElementById('panel-' + tab).classList.add('active');
     }
 
-    // 加载对话列表
     async function loadConversations() {
       const res = await fetch("/conversations");
       const data = await res.json();
@@ -101,7 +103,6 @@
       list.innerHTML = "";
 
       if (data.length === 0) {
-        // 没有任何对话,自动创建一个
         await newConversation();
         return;
       }
@@ -109,18 +110,27 @@
       data.forEach(conv => {
         const div = document.createElement("div");
         div.className = "conv-item" + (conv.id === currentConversationId ? " active" : "");
-        div.textContent = conv.title;
-        div.onclick = () => switchConversation(conv.id);
+
+        const titleSpan = document.createElement("span");
+        titleSpan.className = "conv-title";
+        titleSpan.textContent = conv.title;
+        titleSpan.onclick = () => switchConversation(conv.id);
+
+        const delSpan = document.createElement("span");
+        delSpan.className = "conv-delete";
+        delSpan.textContent = "×";
+        delSpan.onclick = (e) => deleteConversation(conv.id, e);
+
+        div.appendChild(titleSpan);
+        div.appendChild(delSpan);
         list.appendChild(div);
       });
 
-      // 如果还没选中任何对话,默认选第一个
       if (currentConversationId === null) {
         switchConversation(data[0].id);
       }
     }
 
-    // 新建对话
     async function newConversation() {
       const res = await fetch("/conversations", { method: "POST" });
       const data = await res.json();
@@ -129,15 +139,24 @@
       await loadConversations();
     }
 
-    // 切换对话
+    async function deleteConversation(id, event) {
+      event.stopPropagation();
+      if (!confirm("确定删除这个对话吗？")) return;
+
+      await fetch("/conversations/" + id, { method: "DELETE" });
+
+      if (id === currentConversationId) {
+        currentConversationId = null;
+      }
+      await loadConversations();
+    }
+
     async function switchConversation(id) {
       currentConversationId = id;
-      document.querySelectorAll(".conv-item").forEach(el => el.classList.remove("active"));
       await loadConversations();
       await loadHistory();
     }
 
-    // 加载某个对话的历史消息
     async function loadHistory() {
       const res = await fetch("/history?conversation_id=" + currentConversationId);
       const data = await res.json();
@@ -179,7 +198,6 @@
       box.innerHTML += `<div class="ai"><span>${marked.parse(data.reply)}</span></div>`;
       box.scrollTop = box.scrollHeight;
 
-      // 刷新对话列表(标题可能变了)
       loadConversations();
     }
 
@@ -228,7 +246,6 @@
     document.getElementById("chat-input").addEventListener("keydown", e => { if (e.key === "Enter") sendMessage(); });
     document.getElementById("pdf-input").addEventListener("keydown", e => { if (e.key === "Enter") askQuestion(); });
 
-    // 页面加载时初始化
     loadConversations();
   </script>
 </body>

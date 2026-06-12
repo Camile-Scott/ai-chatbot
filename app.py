@@ -85,6 +85,19 @@ def create_conversation():
     conn.close()
     return jsonify({"id": new_id, "title": "新对话"})
 
+# 删除对话
+@app.route("/conversations/<int:conv_id>", methods=["DELETE"])
+def delete_conversation(conv_id):
+    conn = sqlite3.connect("chat.db")
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM conversations WHERE id = ?", (conv_id,))
+    cursor.execute("DELETE FROM messages WHERE conversation_id = ?", (conv_id,))
+    cursor.execute("DELETE FROM documents WHERE conversation_id = ?", (conv_id,))
+    conn.commit()
+    conn.close()
+    return jsonify({"success": True})
+
+
 # 获取所有对话列表
 @app.route("/conversations", methods=["GET"])
 def get_conversations():
