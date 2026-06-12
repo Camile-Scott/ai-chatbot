@@ -1,8 +1,9 @@
 from flask import Flask, request, jsonify, render_template
 from openai import OpenAI
 import PyPDF2
-from docx import Document          # ← 改动1：新增，用于读取Word文件
-from pptx import Presentation      # ← 改动2：新增，用于读取PPT文件
+from docx import Document
+from pptx import Presentation
+import sqlite3
 
 app = Flask(__name__)
 
@@ -11,10 +12,38 @@ client = OpenAI(
     base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"
 )
 
-chat_history = []
-pdf_docs = []
+def init_db():
+    conn = sqlite3.connect("chat.db")
+    cursor = conn.cursor()
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS conversations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT DEFAULT '新对话',
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        conversation_id INTEGER,
+        role TEXT,
+        content TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS documents (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        conversation_id INTEGER,
+        name TEXT,
+        content TEXT
+    )
+    """)
+    conn.commit()
+    conn.close()
 
-# ← 改动3：把原来写在upload函数里的PDF读取逻辑，单独抽出来成一个函数
+init_db()
+
 def read_pdf(file):
     reader = PyPDF2.PdfReader(file)
     text = ""
@@ -22,7 +51,6 @@ def read_pdf(file):
         text += page.extract_text()
     return text
 
-# ← 改动4：新增，读取Word文件
 def read_word(file):
     doc = Document(file)
     text = ""
@@ -30,12 +58,11 @@ def read_word(file):
         text += para.text + "\n"
     return text
 
-# ← 改动5：新增，读取PPT文件，并标注每一页页码
 def read_pptx(file):
     prs = Presentation(file)
     text = ""
     for i, slide in enumerate(prs.slides):
-        text += f"第{i+1}页：\n"
+        text += f"第{i+1}页:\n"
         for shape in slide.shapes:
             if shape.has_text_frame:
                 for para in shape.text_frame.paragraphs:
@@ -47,25 +74,75 @@ def read_pptx(file):
 def index():
     return render_template("index.html")
 
+# 创建新对话
+@app.route("/conversations", methods=["POST"])
+def create_conversation():
+    conn = sqlite3.connect("chat.db")
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO conversations (title) VALUES ('新对话')")
+    conn.commit()
+    new_id = cursor.lastrowid
+    conn.close()
+    return jsonify({"id": new_id, "title": "新对话"})
+
+# 获取所有对话列表
+@app.route("/conversations", methods=["GET"])
+def get_conversations():
+    conn = sqlite3.connect("chat.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, title FROM conversations ORDER BY id DESC")
+    rows = cursor.fetchall()
+    conn.close()
+    return jsonify([{"id": r[0], "title": r[1]} for r in rows])
+
 @app.route("/chat", methods=["POST"])
 def chat():
     user_input = request.json.get("message")
-    chat_history.append({"role": "user", "content": user_input})
+    conversation_id = request.json.get("conversation_id")
+
+    conn = sqlite3.connect("chat.db")
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT role, content FROM messages WHERE conversation_id = ? ORDER BY id", (conversation_id,))
+    history = [{"role": r[0], "content": r[1]} for r in cursor.fetchall()]
+    history.append({"role": "user", "content": user_input})
+
     response = client.chat.completions.create(
         model="deepseek-v3",
-        messages=chat_history
+        messages=history
     )
     reply = response.choices[0].message.content
-    chat_history.append({"role": "assistant", "content": reply})
+
+    cursor.execute("INSERT INTO messages (conversation_id, role, content) VALUES (?, ?, ?)", (conversation_id, "user", user_input))
+    cursor.execute("INSERT INTO messages (conversation_id, role, content) VALUES (?, ?, ?)", (conversation_id, "assistant", reply))
+
+    cursor.execute("SELECT COUNT(*) FROM messages WHERE conversation_id = ?", (conversation_id,))
+    count = cursor.fetchone()[0]
+    if count == 2:
+        title = user_input[:20]
+        cursor.execute("UPDATE conversations SET title = ? WHERE id = ?", (title, conversation_id))
+
+    conn.commit()
+    conn.close()
+
     return jsonify({"reply": reply})
+
+@app.route("/history", methods=["GET"])
+def history():
+    conversation_id = request.args.get("conversation_id")
+    conn = sqlite3.connect("chat.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT role, content FROM messages WHERE conversation_id = ? ORDER BY id", (conversation_id,))
+    rows = cursor.fetchall()
+    conn.close()
+    return jsonify([{"role": r[0], "content": r[1]} for r in rows])
 
 @app.route("/upload", methods=["POST"])
 def upload():
-    global pdf_docs
-    file = request.files["file"]        # ← 改动6：原来是 "pdf"，改成 "file"，更通用
-    filename = file.filename.lower()    # ← 改动7：新增，获取文件名用于判断类型
+    file = request.files["file"]
+    conversation_id = request.form.get("conversation_id")
+    filename = file.filename.lower()
 
-    # ← 改动8：新增，根据文件类型调用不同的读取函数
     if filename.endswith(".pdf"):
         text = read_pdf(file)
     elif filename.endswith(".docx"):
@@ -75,19 +152,36 @@ def upload():
     else:
         return jsonify({"message": "不支持的文件格式"}), 400
 
-    pdf_docs.append({"name": file.filename, "content": text})
+    conn = sqlite3.connect("chat.db")
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO documents (conversation_id, name, content) VALUES (?, ?, ?)",
+                   (conversation_id, file.filename, text))
+    conn.commit()
+
+    cursor.execute("SELECT name FROM documents WHERE conversation_id = ?", (conversation_id,))
+    names = [r[0] for r in cursor.fetchall()]
+    conn.close()
+
     return jsonify({
-        "message": f"上传成功！当前已加载 {len(pdf_docs)} 份文档：{', '.join([d['name'] for d in pdf_docs])}"
+        "message": f"上传成功!当前已加载 {len(names)} 份文档:{', '.join(names)}"
     })
 
 @app.route("/ask", methods=["POST"])
 def ask():
     question = request.json.get("question")
-    combined = "\n\n".join([f"【{d['name']}】\n{d['content']}" for d in pdf_docs])
+    conversation_id = request.json.get("conversation_id")
+
+    conn = sqlite3.connect("chat.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT name, content FROM documents WHERE conversation_id = ?", (conversation_id,))
+    docs = cursor.fetchall()
+    conn.close()
+
+    combined = "\n\n".join([f"【{d[0]}】\n{d[1]}" for d in docs])
     response = client.chat.completions.create(
         model="deepseek-v3",
         messages=[
-            {"role": "system", "content": f"你是文档助手。以下是所有文档内容：\n\n{combined}"},
+            {"role": "system", "content": f"你是文档助手。以下是所有文档内容:\n\n{combined}"},
             {"role": "user", "content": question}
         ]
     )

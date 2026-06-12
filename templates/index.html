@@ -6,7 +6,18 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: sans-serif; height: 100vh; display: flex; flex-direction: column; }
+    body { font-family: sans-serif; height: 100vh; display: flex; }
+
+    /* 左侧边栏 */
+    #sidebar { width: 220px; background: #f7f7f8; border-right: 1px solid #eee; display: flex; flex-direction: column; padding: 12px; }
+    #new-chat-btn { padding: 10px; background: #0084ff; color: white; border: none; border-radius: 8px; cursor: pointer; margin-bottom: 12px; font-size: 14px; }
+    #conversation-list { flex: 1; overflow-y: auto; }
+    .conv-item { padding: 10px 12px; border-radius: 8px; cursor: pointer; font-size: 14px; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .conv-item:hover { background: #ebebeb; }
+    .conv-item.active { background: #e0edff; }
+
+    /* 主区域 */
+    #main { flex: 1; display: flex; flex-direction: column; }
     header { padding: 16px 24px; border-bottom: 1px solid #eee; }
     header h1 { font-size: 18px; }
     .tabs { display: flex; gap: 8px; margin-top: 10px; }
@@ -22,54 +33,124 @@
     .ai span h1, .ai span h2, .ai span h3 { margin: 8px 0 4px; }
     .ai span p { margin: 4px 0; }
     .ai span ul, .ai span ol { margin: 4px 0 4px 20px; }
+    .typing-hourglass { font-size: 20px; display: inline-block; animation: flip 1s steps(1) infinite; }
+    @keyframes flip { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
     .input-area { display: flex; gap: 8px; }
     .input-area input { flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 8px; font-size: 15px; }
     .input-area button { padding: 10px 20px; background: #0084ff; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 15px; }
     #upload-area { border: 2px dashed #ccc; border-radius: 8px; padding: 20px; text-align: center; margin-bottom: 12px; }
     #upload-area p { margin-bottom: 10px; color: #666; font-size: 14px; }
-    #upload-btn { padding: 8px 20px; background: #0084ff; color: white; border: none; border-radius: 8px; cursor: pointer; }
     #pdf-status { font-size: 13px; color: green; margin-bottom: 12px; }
     #pdf-ask { display: none; flex: 1; flex-direction: column; }
   </style>
 </head>
 <body>
-  <header>
-    <h1>我的AI助手</h1>
-    <div class="tabs">
-      <button class="tab active" onclick="switchTab('chat', this)">💬 聊天</button>
-      <button class="tab" onclick="switchTab('pdf', this)">📄 PDF问答</button>
-    </div>
-  </header>
-
-  <div class="panel active" id="panel-chat">
-    <div id="chat-box"></div>
-    <div class="input-area">
-      <input id="chat-input" type="text" placeholder="输入消息..." />
-      <button onclick="sendMessage()">发送</button>
-    </div>
+  <div id="sidebar">
+    <button id="new-chat-btn" onclick="newConversation()">+ 新建对话</button>
+    <div id="conversation-list"></div>
   </div>
 
-  <div class="panel" id="panel-pdf">
-    <div id="upload-area">
-      <p>上传PDF文件，然后向AI提问文件内容（可同时选多个）</p>
-      <input type="file" id="pdf-file" accept=".pdf,.docx,.pptx" multiple onchange="uploadPDF()" />
-    </div>
-    <div id="pdf-status"></div>
-    <div id="pdf-ask">
-      <div id="pdf-box"></div>
+  <div id="main">
+    <header>
+      <h1>我的AI助手</h1>
+      <div class="tabs">
+        <button class="tab active" onclick="switchTab('chat', this)">💬 聊天</button>
+        <button class="tab" onclick="switchTab('pdf', this)">📄 文档问答</button>
+      </div>
+    </header>
+
+    <div class="panel active" id="panel-chat">
+      <div id="chat-box"></div>
       <div class="input-area">
-        <input id="pdf-input" type="text" placeholder="问PDF里的内容..." />
-        <button onclick="askQuestion()">发送</button>
+        <input id="chat-input" type="text" placeholder="输入消息..." />
+        <button onclick="sendMessage()">发送</button>
+      </div>
+    </div>
+
+    <div class="panel" id="panel-pdf">
+      <div id="upload-area">
+        <p>上传文件后向AI提问(支持PDF、Word、PPT,可同时选多个)</p>
+        <input type="file" id="pdf-file" accept=".pdf,.docx,.pptx" multiple onchange="uploadPDF()" />
+      </div>
+      <div id="pdf-status"></div>
+      <div id="pdf-ask">
+        <div id="pdf-box"></div>
+        <div class="input-area">
+          <input id="pdf-input" type="text" placeholder="问文档里的内容..." />
+          <button onclick="askQuestion()">发送</button>
+        </div>
       </div>
     </div>
   </div>
 
   <script>
+    let currentConversationId = null;
+
     function switchTab(tab, el) {
       document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
       document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
       el.classList.add('active');
       document.getElementById('panel-' + tab).classList.add('active');
+    }
+
+    // 加载对话列表
+    async function loadConversations() {
+      const res = await fetch("/conversations");
+      const data = await res.json();
+      const list = document.getElementById("conversation-list");
+      list.innerHTML = "";
+
+      if (data.length === 0) {
+        // 没有任何对话,自动创建一个
+        await newConversation();
+        return;
+      }
+
+      data.forEach(conv => {
+        const div = document.createElement("div");
+        div.className = "conv-item" + (conv.id === currentConversationId ? " active" : "");
+        div.textContent = conv.title;
+        div.onclick = () => switchConversation(conv.id);
+        list.appendChild(div);
+      });
+
+      // 如果还没选中任何对话,默认选第一个
+      if (currentConversationId === null) {
+        switchConversation(data[0].id);
+      }
+    }
+
+    // 新建对话
+    async function newConversation() {
+      const res = await fetch("/conversations", { method: "POST" });
+      const data = await res.json();
+      currentConversationId = data.id;
+      document.getElementById("chat-box").innerHTML = "";
+      await loadConversations();
+    }
+
+    // 切换对话
+    async function switchConversation(id) {
+      currentConversationId = id;
+      document.querySelectorAll(".conv-item").forEach(el => el.classList.remove("active"));
+      await loadConversations();
+      await loadHistory();
+    }
+
+    // 加载某个对话的历史消息
+    async function loadHistory() {
+      const res = await fetch("/history?conversation_id=" + currentConversationId);
+      const data = await res.json();
+      const box = document.getElementById("chat-box");
+      box.innerHTML = "";
+      data.forEach(msg => {
+        if (msg.role === "user") {
+          box.innerHTML += `<div class="user"><span>${msg.content}</span></div>`;
+        } else if (msg.role === "assistant") {
+          box.innerHTML += `<div class="ai"><span>${marked.parse(msg.content)}</span></div>`;
+        }
+      });
+      box.scrollTop = box.scrollHeight;
     }
 
     async function sendMessage() {
@@ -79,23 +160,37 @@
       const box = document.getElementById("chat-box");
       box.innerHTML += `<div class="user"><span>${msg}</span></div>`;
       input.value = "";
+
+      const typing = document.createElement("div");
+      typing.className = "ai";
+      typing.id = "typing";
+      typing.innerHTML = `<span class="typing-hourglass">⏳</span>`;
+      box.appendChild(typing);
+      box.scrollTop = box.scrollHeight;
+
       const res = await fetch("/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: msg })
+        body: JSON.stringify({ message: msg, conversation_id: currentConversationId })
       });
       const data = await res.json();
+
+      document.getElementById("typing")?.remove();
       box.innerHTML += `<div class="ai"><span>${marked.parse(data.reply)}</span></div>`;
       box.scrollTop = box.scrollHeight;
+
+      // 刷新对话列表(标题可能变了)
+      loadConversations();
     }
 
     async function uploadPDF() {
       const files = document.getElementById("pdf-file").files;
-      if (files.length === 0) { alert("请先选择PDF文件"); return; }
+      if (files.length === 0) return;
       document.getElementById("pdf-status").textContent = "上传中...";
       for (const file of files) {
         const formData = new FormData();
         formData.append("file", file);
+        formData.append("conversation_id", currentConversationId);
         const res = await fetch("/upload", { method: "POST", body: formData });
         const data = await res.json();
         document.getElementById("pdf-status").textContent = data.message;
@@ -110,18 +205,31 @@
       const box = document.getElementById("pdf-box");
       box.innerHTML += `<div class="user"><span>${question}</span></div>`;
       input.value = "";
+
+      const typing = document.createElement("div");
+      typing.className = "ai";
+      typing.id = "typing-pdf";
+      typing.innerHTML = `<span class="typing-hourglass">⏳</span>`;
+      box.appendChild(typing);
+      box.scrollTop = box.scrollHeight;
+
       const res = await fetch("/ask", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question })
+        body: JSON.stringify({ question, conversation_id: currentConversationId })
       });
       const data = await res.json();
+
+      document.getElementById("typing-pdf")?.remove();
       box.innerHTML += `<div class="ai"><span>${marked.parse(data.answer)}</span></div>`;
       box.scrollTop = box.scrollHeight;
     }
 
     document.getElementById("chat-input").addEventListener("keydown", e => { if (e.key === "Enter") sendMessage(); });
     document.getElementById("pdf-input").addEventListener("keydown", e => { if (e.key === "Enter") askQuestion(); });
+
+    // 页面加载时初始化
+    loadConversations();
   </script>
 </body>
 </html>
