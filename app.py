@@ -8,7 +8,7 @@ import sqlite3
 app = Flask(__name__)
 
 client = OpenAI(
-    api_key="sk-b4ea12a9c50e4704a15f2a7ad5010167",
+    api_key="XXX你的阿里云的key",
     base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"
 )
 
