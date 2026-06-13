@@ -6,45 +6,289 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: sans-serif; height: 100vh; display: flex; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; height: 100vh; display: flex; background: #fff; }
 
-    /* 左侧边栏 */
-    #sidebar { width: 220px; background: #f7f7f8; border-right: 1px solid #eee; display: flex; flex-direction: column; padding: 12px; }
-    #new-chat-btn { padding: 10px; background: #0084ff; color: white; border: none; border-radius: 8px; cursor: pointer; margin-bottom: 12px; font-size: 14px; }
-    #conversation-list { flex: 1; overflow-y: auto; }
-    .conv-item { padding: 10px 12px; border-radius: 8px; cursor: pointer; font-size: 14px; margin-bottom: 4px; display: flex; justify-content: space-between; align-items: center; min-width: 0; }
-    .conv-item:hover { background: #ebebeb; }
-    .conv-item.active { background: #e0edff; }
-    .conv-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
-    .conv-delete { color: #999; font-size: 13px; padding: 2px 6px; border-radius: 4px; flex-shrink: 0; margin-left: 4px; }
-    .conv-delete:hover { color: #ff4d4f; background: #fff; }
+    /* 左侧边栏 - 固定 */
+    #sidebar { 
+      width: 260px; 
+      background: #f5f5f5; 
+      border-right: 1px solid #e0e0e0; 
+      display: flex; 
+      flex-direction: column; 
+      padding: 16px 12px;
+      position: fixed;
+      height: 100vh;
+      overflow-y: auto;
+      z-index: 100;
+    }
+
+    #new-chat-btn { 
+      padding: 12px 16px; 
+      background: #0084ff; 
+      color: white; 
+      border: none; 
+      border-radius: 8px; 
+      cursor: pointer; 
+      margin-bottom: 16px; 
+      font-size: 14px;
+      font-weight: 500;
+      transition: background 0.2s;
+    }
+
+    #new-chat-btn:hover { background: #0073e6; }
+
+    #conversation-list { 
+      flex: 1; 
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .conv-item { 
+      padding: 12px 12px; 
+      border-radius: 8px; 
+      cursor: pointer; 
+      font-size: 14px; 
+      display: flex; 
+      justify-content: space-between; 
+      align-items: center; 
+      min-width: 0;
+      transition: background 0.2s;
+    }
+
+    .conv-item:hover { background: #e8e8e8; }
+    .conv-item.active { background: #dbeafe; color: #0084ff; font-weight: 500; }
+
+    .conv-title { 
+      white-space: nowrap; 
+      overflow: hidden; 
+      text-overflow: ellipsis; 
+      flex: 1; 
+      min-width: 0;
+    }
+
+    .conv-delete { 
+      color: #999; 
+      font-size: 13px; 
+      padding: 4px 6px; 
+      border-radius: 4px; 
+      flex-shrink: 0; 
+      margin-left: 4px;
+      cursor: pointer;
+    }
+
+    .conv-delete:hover { color: #ff4d4f; background: #fafafa; }
 
     /* 主区域 */
-    #main { flex: 1; display: flex; flex-direction: column; }
-    header { padding: 16px 24px; border-bottom: 1px solid #eee; }
-    header h1 { font-size: 18px; }
-    .tabs { display: flex; gap: 8px; margin-top: 10px; }
-    .tab { padding: 6px 16px; border-radius: 20px; cursor: pointer; border: 1px solid #ccc; font-size: 14px; background: white; }
-    .tab.active { background: #0084ff; color: white; border-color: #0084ff; }
-    .panel { display: none; flex: 1; flex-direction: column; padding: 16px 24px; }
+    #main { 
+      flex: 1; 
+      display: flex; 
+      flex-direction: column; 
+      margin-left: 260px;
+      background: #fff;
+    }
+
+    header { 
+      padding: 16px 24px; 
+      border-bottom: 1px solid #e0e0e0;
+      background: #fff;
+      position: sticky;
+      top: 0;
+      z-index: 50;
+    }
+
+    header h1 { 
+      font-size: 20px; 
+      font-weight: 600;
+      margin-bottom: 12px;
+    }
+
+    .tabs { 
+      display: flex; 
+      gap: 8px; 
+    }
+
+    .tab { 
+      padding: 8px 16px; 
+      border-radius: 20px; 
+      cursor: pointer; 
+      border: 1px solid #ddd; 
+      font-size: 14px; 
+      background: white;
+      transition: all 0.2s;
+    }
+
+    .tab:hover { border-color: #0084ff; color: #0084ff; }
+    .tab.active { 
+      background: #0084ff; 
+      color: white; 
+      border-color: #0084ff; 
+    }
+
+    .panel { 
+      display: none; 
+      flex: 1; 
+      flex-direction: column; 
+      padding: 16px 24px;
+      overflow: hidden;
+    }
+
     .panel.active { display: flex; }
-    #chat-box, #pdf-box { flex: 1; border: 1px solid #ccc; border-radius: 8px; overflow-y: auto; padding: 16px; margin-bottom: 16px; }
-    .user { text-align: right; margin: 8px 0; }
-    .user span { background: #0084ff; color: white; padding: 8px 14px; border-radius: 16px; display: inline-block; max-width: 80%; }
-    .ai { text-align: left; margin: 8px 0; }
-    .ai span { background: #f0f0f0; padding: 8px 14px; border-radius: 16px; display: inline-block; max-width: 80%; line-height: 1.6; }
-    .ai span h1, .ai span h2, .ai span h3 { margin: 8px 0 4px; }
+
+    #chat-box, #pdf-box { 
+      flex: 1; 
+      border: 1px solid #e0e0e0; 
+      border-radius: 8px; 
+      overflow-y: auto; 
+      padding: 16px; 
+      margin-bottom: 16px;
+      background: #fafafa;
+    }
+
+    .user { 
+      text-align: right; 
+      margin: 8px 0; 
+    }
+
+    .user span { 
+      background: #0084ff; 
+      color: white; 
+      padding: 8px 14px; 
+      border-radius: 16px; 
+      display: inline-block; 
+      max-width: 80%;
+      word-wrap: break-word;
+    }
+
+    .ai { 
+      text-align: left; 
+      margin: 8px 0; 
+    }
+
+    .ai span { 
+      background: #e8e8e8; 
+      padding: 8px 14px; 
+      border-radius: 16px; 
+      display: inline-block; 
+      max-width: 80%; 
+      line-height: 1.6;
+      word-wrap: break-word;
+    }
+
+    .ai span h1, .ai span h2, .ai span h3 { 
+      margin: 8px 0 4px; 
+      font-size: 1em;
+    }
+
     .ai span p { margin: 4px 0; }
-    .ai span ul, .ai span ol { margin: 4px 0 4px 20px; }
-    .typing-hourglass { font-size: 20px; display: inline-block; animation: flip 1s steps(1) infinite; }
-    @keyframes flip { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
-    .input-area { display: flex; gap: 8px; }
-    .input-area input { flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 8px; font-size: 15px; }
-    .input-area button { padding: 10px 20px; background: #0084ff; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 15px; }
-    #upload-area { border: 2px dashed #ccc; border-radius: 8px; padding: 20px; text-align: center; margin-bottom: 12px; }
-    #upload-area p { margin-bottom: 10px; color: #666; font-size: 14px; }
-    #pdf-status { font-size: 13px; color: green; margin-bottom: 12px; }
-    #pdf-ask { display: none; flex: 1; flex-direction: column; }
+
+    .ai span ul, .ai span ol { 
+      margin: 4px 0 4px 20px; 
+    }
+
+    .typing-hourglass { 
+      font-size: 20px; 
+      display: inline-block; 
+      animation: flip 1s steps(1) infinite; 
+    }
+
+    @keyframes flip { 
+      0%, 100% { opacity: 1; } 
+      50% { opacity: 0.3; } 
+    }
+
+    .input-area { 
+      display: flex; 
+      gap: 8px;
+      background: #fff;
+    }
+
+    .input-area input { 
+      flex: 1; 
+      padding: 12px 14px; 
+      border: 1px solid #ddd; 
+      border-radius: 8px; 
+      font-size: 14px;
+      transition: border-color 0.2s;
+    }
+
+    .input-area input:focus {
+      outline: none;
+      border-color: #0084ff;
+      box-shadow: 0 0 0 3px rgba(0, 132, 255, 0.1);
+    }
+
+    .input-area button { 
+      padding: 12px 24px; 
+      background: #0084ff; 
+      color: white; 
+      border: none; 
+      border-radius: 8px; 
+      cursor: pointer; 
+      font-size: 14px;
+      font-weight: 500;
+      transition: background 0.2s;
+    }
+
+    .input-area button:hover { background: #0073e6; }
+
+    #upload-area { 
+      border: 2px dashed #ddd; 
+      border-radius: 8px; 
+      padding: 24px; 
+      text-align: center; 
+      margin-bottom: 16px;
+      background: #fafafa;
+    }
+
+    #upload-area p { 
+      margin-bottom: 12px; 
+      color: #666; 
+      font-size: 14px; 
+    }
+
+    #upload-area input { 
+      margin: 12px 0;
+    }
+
+    #pdf-status { 
+      font-size: 13px; 
+      color: #4caf50; 
+      margin-bottom: 12px;
+    }
+
+    #pdf-ask { 
+      display: none; 
+      flex: 1; 
+      flex-direction: column; 
+    }
+
+    /* 滚动条美化 */
+    #chat-box::-webkit-scrollbar,
+    #pdf-box::-webkit-scrollbar,
+    #conversation-list::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    #chat-box::-webkit-scrollbar-track,
+    #pdf-box::-webkit-scrollbar-track,
+    #conversation-list::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    #chat-box::-webkit-scrollbar-thumb,
+    #pdf-box::-webkit-scrollbar-thumb,
+    #conversation-list::-webkit-scrollbar-thumb {
+      background: #ccc;
+      border-radius: 3px;
+    }
+
+    #chat-box::-webkit-scrollbar-thumb:hover,
+    #pdf-box::-webkit-scrollbar-thumb:hover,
+    #conversation-list::-webkit-scrollbar-thumb:hover {
+      background: #999;
+    }
   </style>
 </head>
 <body>
