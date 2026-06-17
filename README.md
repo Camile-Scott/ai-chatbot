@@ -15,7 +15,7 @@
 
 - **后端**：Python + Flask
 - **数据库**：SQLite
-- **前端**：HTML / CSS / JavaScript（原生，无框架）
+- **前端**：HTML 
 - **AI模型**：DeepSeek-V3（通过阿里云百炼API）
 - **文档解析**：PyPDF2、python-docx、python-pptx
 
